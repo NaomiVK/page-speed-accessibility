@@ -8,16 +8,18 @@ A powerful Streamlit application that analyzes web pages for accessibility issue
 - **Bulk URL Processing**: Upload a CSV file with multiple URLs for batch analysis
 - **Comprehensive Accessibility Audits**: Based on Google Lighthouse and WCAG 2.0 AA guidelines
 - **Detailed Reports**: View failed audits, manual checks needed, passed audits, and non-applicable tests
+- **AI-Powered Recommendations**: Get specific fix recommendations for failed audits using Google's Gemini 2.5 Pro model
 - **Visual Summaries**: Interactive charts showing audit distribution and statistics
 - **Code Snippets**: See examples of problematic HTML for easier fixing
 - **Manual Testing Guidance**: Tips for verifying issues that can't be automatically detected
 - **Mobile & Desktop Analysis**: Choose which device type to simulate for testing
-- **Export Results**: Download summary reports as CSV files
+- **Export Results**: Download summary reports as CSV files (including AI recommendations)
 
 ## 📋 Requirements
 
 - Python 3.7+
 - Google PageSpeed Insights API key
+- OpenRouter API key (for Gemini AI analysis)
 - Required Python packages:
   - streamlit
   - pandas
@@ -49,6 +51,18 @@ A powerful Streamlit application that analyzes web pages for accessibility issue
      export PAGESPEED_API_KEY=your_api_key_here
      ```
 
+4. Set up your OpenRouter API key (for Gemini AI analysis):
+   - Sign up at [OpenRouter](https://openrouter.ai/)
+   - Get your API key from the dashboard
+   - Set the environment variable:
+     ```
+     # On Windows
+     set OPENROUTER_API_KEY=your_api_key_here
+     
+     # On macOS/Linux
+     export OPENROUTER_API_KEY=your_api_key_here
+     ```
+
 ## 💻 Usage
 
 1. Start the Streamlit app:
@@ -64,6 +78,8 @@ A powerful Streamlit application that analyzes web pages for accessibility issue
 
 5. View the results and detailed reports for each URL
 
+6. For URLs with failed audits, click "Analyze with Gemini" to get AI-powered recommendations on how to fix the issues
+
 ## 📊 Understanding the Results
 
 The app categorizes accessibility audits into four groups:
@@ -72,6 +88,7 @@ The app categorizes accessibility audits into four groups:
 - **Requires Manual Verification ⚠️**: Aspects that need human judgment and testing with assistive technologies
 - **Passed Audits ✅**: Requirements successfully met according to automated testing
 - **Not Applicable ⏩**: Audits that don't apply to the current page
+- **AI Recommendations 🤖**: Specific suggestions from Google's Gemini 2.5 Pro model on how to fix failed audits
 
 ## ⚠️ Important Considerations
 

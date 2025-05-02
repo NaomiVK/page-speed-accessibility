@@ -8,8 +8,10 @@ import altair as st_alt # For better visualizations
 
 # --- Configuration ---
 API_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 API_CALL_DELAY = 0.8 # Slightly increased delay might be needed for larger responses
 REQUEST_TIMEOUT = 120 # Increased timeout as getting all audits might take longer
+OPENROUTER_TIMEOUT = 30 # Timeout for OpenRouter API calls
 
 # --- Helper Functions ---
 def get_audit_category(score, display_mode):
@@ -146,6 +148,87 @@ def get_psi_accessibility_details(url_to_check, api_key, strategy):
         st.error(f"An unexpected error occurred processing {url_to_check}: {e}")
         return {"error": f"Error: Unexpected ({e})"}
 
+# --- Function to Call OpenRouter API for Gemini Analysis ---
+def get_gemini_analysis(failed_audits, url):
+    """
+    Send failed accessibility audits to Gemini 2.5 Pro via OpenRouter for analysis.
+    
+    Args:
+        failed_audits (list): List of failed accessibility audits
+        url (str): The URL that was analyzed
+        
+    Returns:
+        str: Gemini's analysis and recommendations, or error message
+    """
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        return "Error: OPENROUTER_API_KEY environment variable not found."
+    
+    # Format the prompt with all audit information
+    prompt = f"""Analyze these accessibility failures for {url} and provide a comprehensive summary.
+
+Your response should:
+1. Explain each issue in plain, non-technical language that anyone can understand
+2. Provide specific, actionable recommendations on how to fix each issue
+3. Be thorough and detailed in your explanations and recommendations
+4. Prioritize the most critical accessibility issues first
+
+Here are the accessibility failures to analyze:
+
+"""
+    
+    for i, audit in enumerate(failed_audits, 1):
+        prompt += f"{i}. Issue: {audit.get('title')}\n"
+        prompt += f"   Description: {audit.get('description')}\n"
+        if audit.get('details_snippet') and audit.get('details_snippet') != " (No specific item snippet)":
+            prompt += f"   Code Snippet: {audit.get('details_snippet')}\n"
+        prompt += "\n"
+    
+    # Prepare the request to OpenRouter
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "google/gemini-2.5-pro-preview-03-25",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 4096
+    }
+    
+    try:
+        response = requests.post(
+            OPENROUTER_ENDPOINT,
+            headers=headers,
+            json=payload,
+            timeout=OPENROUTER_TIMEOUT
+        )
+        response.raise_for_status()
+        result = response.json()
+        
+        # Extract the analysis from the response
+        analysis = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if not analysis:
+            return "Error: Received empty response from Gemini model."
+        
+        return analysis
+    
+    except requests.exceptions.Timeout:
+        return "Error: Request to OpenRouter timed out."
+    except requests.exceptions.HTTPError as e:
+        error_detail = f"HTTP Error {e.response.status_code}"
+        try:
+            error_content = response.json().get('error', {})
+            error_detail = f"API Error {error_content.get('code', e.response.status_code)}: {error_content.get('message', 'No details provided')}"
+        except (json.JSONDecodeError, AttributeError):
+            error_detail = f"HTTP Error {e.response.status_code}: {response.text[:200]}"
+        return f"Error: {error_detail}"
+    except requests.exceptions.RequestException as e:
+        return f"Error: Network error occurred: {e}"
+    except Exception as e:
+        return f"Error: Unexpected error occurred: {e}"
 
 # --- Streamlit App UI ---
 st.set_page_config(page_title="Detailed PSI Accessibility Checker", layout="wide")
@@ -177,6 +260,13 @@ if not api_key:
 else:
     masked_key = api_key[:4] + "****" + api_key[-4:]
     st.success(f"✅ API Key found (ends in ...{masked_key[-8:]}).")
+# Check for OpenRouter API Key
+openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+if not openrouter_api_key:
+    st.warning("⚠️ **Warning:** `OPENROUTER_API_KEY` environment variable not found. Gemini AI analysis will not be available.")
+else:
+    masked_openrouter_key = openrouter_api_key[:4] + "****" + openrouter_api_key[-4:]
+    st.success(f"✅ OpenRouter API Key found (ends in ...{masked_openrouter_key[-8:]}).")
 
 
 # 2. User Selection: Strategy (Same as before)
@@ -191,6 +281,8 @@ if 'results_df' not in st.session_state:
     st.session_state.results_df = None
 if 'detailed_results' not in st.session_state:
     st.session_state.detailed_results = {} # Store detailed audits keyed by original index
+if 'gemini_analyses' not in st.session_state:
+    st.session_state.gemini_analyses = {} # Store Gemini analyses keyed by URL
 if 'last_uploaded_filename' not in st.session_state:
     st.session_state.last_uploaded_filename = None
 
@@ -206,6 +298,7 @@ if uploaded_file is not None:
         # Clear previous results when a new file is uploaded
         st.session_state.results_df = None
         st.session_state.detailed_results = {}
+        st.session_state.gemini_analyses = {}
         st.session_state.last_uploaded_filename = uploaded_file.name
     elif st.session_state.results_df is None:
         # If the same file is uploaded again, but results were cleared, process again
@@ -278,11 +371,13 @@ if process_file:
         st.error("❌ **Error:** The uploaded CSV file appears to be empty.")
         st.session_state.results_df = None # Clear results on error
         st.session_state.detailed_results = {}
+        st.session_state.gemini_analyses = {}
     except Exception as e:
         st.error(f"An unexpected error occurred while processing the file: {e}")
         st.exception(e)
         st.session_state.results_df = None # Clear results on error
         st.session_state.detailed_results = {}
+        st.session_state.gemini_analyses = {}
 
 # --- Display Results ---
 if st.session_state.results_df is not None:
@@ -385,6 +480,35 @@ if st.session_state.results_df is not None:
                             st.markdown(f"> {audit.get('description')}")
                             if audit.get('details_snippet') and audit.get('details_snippet') != " (No specific item snippet)":
                                 st.code(f"Example Snippet:\n{audit.get('details_snippet')}", language='html')
+# Gemini AI Analysis Section
+                if failed_audits:
+                    st.subheader("🤖 AI Analysis with Gemini")
+                    
+                    current_url = st.session_state.results_df.loc[selected_index, 'urls']
+                    
+                    if current_url in st.session_state.gemini_analyses:
+                        st.markdown("### Gemini's Recommendations")
+                        st.markdown(st.session_state.gemini_analyses[current_url])
+                    else:
+                        if st.button("Analyze with Gemini"):
+                            with st.spinner("Sending to Gemini for analysis..."):
+                                analysis = get_gemini_analysis(failed_audits, current_url)
+                                
+                                # Store the analysis in session state
+                                st.session_state.gemini_analyses[current_url] = analysis
+                                
+                                # Update the results DataFrame to include the analysis
+                                if 'Gemini Analysis' not in st.session_state.results_df.columns:
+                                    st.session_state.results_df['Gemini Analysis'] = ""
+                                
+                                st.session_state.results_df.loc[selected_index, 'Gemini Analysis'] = analysis
+                                
+                                # Display the analysis
+                                st.markdown("### Gemini's Recommendations")
+                                st.markdown(analysis)
+                                
+                                # Rerun to update the UI
+                                st.rerun()
                 
                 # 2. Manual Verification Section
                 if manual_audits:
@@ -420,6 +544,10 @@ if st.session_state.results_df is not None:
     # --- Download Button (using session state df) ---
     @st.cache_data # Cache the conversion
     def convert_df_to_csv(df_to_convert):
+        # Ensure the Gemini Analysis column exists
+        if 'Gemini Analysis' not in df_to_convert.columns:
+            df_to_convert['Gemini Analysis'] = ""
+        
         return df_to_convert.to_csv(index=False).encode('utf-8')
 
     csv_output = convert_df_to_csv(st.session_state.results_df)
