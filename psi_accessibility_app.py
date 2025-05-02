@@ -165,12 +165,12 @@ def get_gemini_analysis(failed_audits, url):
         return "Error: OPENROUTER_API_KEY environment variable not found."
     
     # Format the prompt with all audit information
-    prompt = f"""Analyze these accessibility failures for {url} and provide a comprehensive summary.
+    prompt = f"""Analyze these accessibility failures for {url} and provide a concise summary.
 
 Your response should:
-1. Explain each issue in plain, non-technical language that anyone can understand
-2. Provide specific, actionable recommendations on how to fix each issue
-3. Be thorough and detailed in your explanations and recommendations
+1. Explain each issue in plain, non-technical language
+2. Provide brief, specific recommendations on how to fix each issue
+3. Be concise and to the point - avoid unnecessary explanations
 4. Prioritize the most critical accessibility issues first
 
 Here are the accessibility failures to analyze:
@@ -195,7 +195,8 @@ Here are the accessibility failures to analyze:
         "messages": [
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 4096
+        "max_tokens": 4096,
+        "temperature": 0.3
     }
     
     try:
@@ -269,11 +270,8 @@ else:
     st.success(f"✅ OpenRouter API Key found (ends in ...{masked_openrouter_key[-8:]}).")
 
 
-# 2. User Selection: Strategy (Same as before)
-strategy_choice = st.radio(
-    "Select Analysis Strategy:", ('mobile', 'desktop'), index=1, horizontal=True, key='strategy_select'
-)
-st.info(f"Analysis will use the **{strategy_choice}** strategy.")
+# 2. Analysis Strategy Information
+st.info("The app will analyze URLs using both **desktop** and **mobile** strategies for comprehensive accessibility testing.")
 
 # --- Session State Initialization ---
 # Use session state to store results across reruns (e.g., when selecting a URL for details)
@@ -320,50 +318,81 @@ if process_file:
             st.warning("⚠️ No valid URLs found in the uploaded file after cleaning.")
             st.stop()
 
-        st.write(f"Found {len(df)} URLs to process using the '{strategy_choice}' strategy...")
+        st.write(f"Found {len(df)} URLs to process using both desktop and mobile strategies...")
 
-        scores = []
+        desktop_scores = []
+        mobile_scores = []
         st.session_state.detailed_results = {} # Reset details for new run
+        st.session_state.desktop_results = {}
+        st.session_state.mobile_results = {}
         progress_bar = st.progress(0)
         status_text = st.empty()
-        total_urls = len(df)
+        total_urls = len(df) * 2  # Each URL is processed twice (desktop and mobile)
         start_time = time.time()
+        
+        # Process counter for progress calculation
+        process_count = 0
 
         for i, row in df.iterrows(): # Use iterrows to get index `i` easily
             url = row['urls']
-            current_progress = (i + 1) / total_urls
+            
+            # Process desktop strategy
+            process_count += 1
+            current_progress = process_count / total_urls
             elapsed_time = time.time() - start_time
-            avg_time_per_url = elapsed_time / (i + 1) if i >= 0 else elapsed_time
-            estimated_remaining = (total_urls - (i + 1)) * avg_time_per_url if avg_time_per_url > 0 else 0
+            avg_time_per_process = elapsed_time / process_count if process_count > 0 else elapsed_time
+            estimated_remaining = (total_urls - process_count) * avg_time_per_process if avg_time_per_process > 0 else 0
 
             status_text.text(
-                f"⚙️ Processing URL {i+1}/{total_urls}: {url}\n"
+                f"⚙️ Processing URL {i+1}/{len(df)} (Desktop): {url}\n"
                 f"⏳ Estimated time remaining: {time.strftime('%M:%S', time.gmtime(estimated_remaining))}"
             )
 
-            # Call the UPDATED API function
-            result_data = get_psi_accessibility_details(url, api_key, strategy_choice)
+            # Call the API function for desktop
+            desktop_result = get_psi_accessibility_details(url, api_key, 'desktop')
 
-            if "error" in result_data:
-                scores.append(result_data["error"])
-                # No detailed audits available for this URL due to error
-                st.session_state.detailed_results[i] = [{"error": result_data["error"]}]
+            if "error" in desktop_result:
+                desktop_scores.append(desktop_result["error"])
+                st.session_state.desktop_results[i] = [{"error": desktop_result["error"]}]
             else:
-                scores.append(result_data['score'])
-                # Store the detailed audits using the original DataFrame index 'i'
-                st.session_state.detailed_results[i] = result_data['audits']
+                desktop_scores.append(desktop_result['score'])
+                st.session_state.desktop_results[i] = desktop_result['audits']
 
+            progress_bar.progress(current_progress)
+            time.sleep(API_CALL_DELAY)
+            
+            # Process mobile strategy
+            process_count += 1
+            current_progress = process_count / total_urls
+            elapsed_time = time.time() - start_time
+            avg_time_per_process = elapsed_time / process_count if process_count > 0 else elapsed_time
+            estimated_remaining = (total_urls - process_count) * avg_time_per_process if avg_time_per_process > 0 else 0
+
+            status_text.text(
+                f"⚙️ Processing URL {i+1}/{len(df)} (Mobile): {url}\n"
+                f"⏳ Estimated time remaining: {time.strftime('%M:%S', time.gmtime(estimated_remaining))}"
+            )
+
+            # Call the API function for mobile
+            mobile_result = get_psi_accessibility_details(url, api_key, 'mobile')
+
+            if "error" in mobile_result:
+                mobile_scores.append(mobile_result["error"])
+                st.session_state.mobile_results[i] = [{"error": mobile_result["error"]}]
+            else:
+                mobile_scores.append(mobile_result['score'])
+                st.session_state.mobile_results[i] = mobile_result['audits']
 
             progress_bar.progress(current_progress)
             time.sleep(API_CALL_DELAY)
 
         end_time = time.time()
         total_time = end_time - start_time
-        status_text.success(f"✅ Processing complete for {total_urls} URLs in {time.strftime('%M minutes %S seconds', time.gmtime(total_time))}!")
+        status_text.success(f"✅ Processing complete for {len(df)} URLs (desktop and mobile) in {time.strftime('%M minutes %S seconds', time.gmtime(total_time))}!")
 
         # Store results in session state DataFrame
-        result_column_name = f'Overall Score ({strategy_choice.capitalize()})'
-        df[result_column_name] = scores
+        df['Desktop Score'] = desktop_scores
+        df['Mobile Score'] = mobile_scores
         st.session_state.results_df = df # Save the DataFrame to session state
 
 
@@ -399,17 +428,23 @@ if st.session_state.results_df is not None:
         if selected_option:
             # Extract the index from the selected option string
             selected_index = int(selected_option.split(":")[0])
-
-            st.markdown(f"**Details for:** `{st.session_state.results_df.loc[selected_index, 'urls']}`")
-
-            # Retrieve the stored detailed audits for the selected index
-            audits_to_display = st.session_state.detailed_results.get(selected_index, [])
-
-            if not audits_to_display:
-                st.info("No accessibility audits were found for this URL, or an error occurred during its analysis.")
-            elif "error" in audits_to_display[0]: # Check if the stored detail is an error message
-                st.error(f"Could not retrieve details due to a previous error: {audits_to_display[0]['error']}")
-            else:
+            current_url = st.session_state.results_df.loc[selected_index, 'urls']
+            
+            st.markdown(f"**Details for:** `{current_url}`")
+            
+            # Create tabs for desktop and mobile results
+            desktop_tab, mobile_tab = st.tabs(["💻 Desktop Results", "📱 Mobile Results"])
+            
+            # Function to display audit results for a specific device type
+            def display_audit_results(device_type, audits_to_display):
+                if not audits_to_display:
+                    st.info(f"No accessibility audits were found for this URL on {device_type}, or an error occurred during its analysis.")
+                    return
+                
+                if "error" in audits_to_display[0]: # Check if the stored detail is an error message
+                    st.error(f"Could not retrieve details due to a previous error: {audits_to_display[0]['error']}")
+                    return
+                
                 # Group audits by category
                 failed_audits = [a for a in audits_to_display if a.get('category') == 'failed']
                 manual_audits = [a for a in audits_to_display if a.get('category') == 'manual_check']
@@ -423,7 +458,7 @@ if st.session_state.results_df is not None:
                 # Display summary statistics
                 col1, col2 = st.columns([2, 1])
                 with col1:
-                    st.subheader("Audit Summary")
+                    st.subheader(f"{device_type} Audit Summary")
                     summary_df = pd.DataFrame({
                         "Category": categories,
                         "Count": counts
@@ -438,7 +473,7 @@ if st.session_state.results_df is not None:
                             range=['#ff4b4b', '#ffa500', '#00cc44', '#aaaaaa']
                         ))
                     ).properties(
-                        title='Accessibility Audit Distribution'
+                        title=f'{device_type} Accessibility Audit Distribution'
                     )
                     st.altair_chart(chart, use_container_width=True)
                 
@@ -469,94 +504,106 @@ if st.session_state.results_df is not None:
                     'meta-viewport': "Test zooming and scaling on mobile devices to ensure content remains accessible."
                 }
                 
-                # 1. Failed Audits Section
+                # Use expanders for better organization
                 if failed_audits:
-                    st.subheader("❌ Failed Audits")
-                    st.markdown("These are accessibility issues automatically detected that must be fixed:")
-                    for audit in failed_audits:
-                        with st.container():
-                            st.markdown("---")
-                            st.warning(f"**{audit.get('title')}** (ID: `{audit.get('id')}`)")
-                            st.markdown(f"> {audit.get('description')}")
-                            if audit.get('details_snippet') and audit.get('details_snippet') != " (No specific item snippet)":
-                                st.code(f"Example Snippet:\n{audit.get('details_snippet')}", language='html')
-# Gemini AI Analysis Section
-                if failed_audits:
-                    st.subheader("🤖 AI Analysis with Gemini")
-                    
-                    current_url = st.session_state.results_df.loc[selected_index, 'urls']
-                    
-                    if current_url in st.session_state.gemini_analyses:
-                        st.markdown("### Gemini's Recommendations")
-                        st.markdown(st.session_state.gemini_analyses[current_url])
-                    else:
-                        if st.button("Analyze with Gemini"):
-                            with st.spinner("Sending to Gemini for analysis..."):
-                                analysis = get_gemini_analysis(failed_audits, current_url)
-                                
-                                # Store the analysis in session state
-                                st.session_state.gemini_analyses[current_url] = analysis
-                                
-                                # Update the results DataFrame to include the analysis
-                                if 'Gemini Analysis' not in st.session_state.results_df.columns:
-                                    st.session_state.results_df['Gemini Analysis'] = ""
-                                
-                                st.session_state.results_df.loc[selected_index, 'Gemini Analysis'] = analysis
-                                
-                                # Display the analysis
-                                st.markdown("### Gemini's Recommendations")
-                                st.markdown(analysis)
-                                
-                                # Rerun to update the UI
-                                st.rerun()
+                    with st.expander("❌ Failed Audits", expanded=True):
+                        st.markdown("These are accessibility issues automatically detected that must be fixed:")
+                        for audit in failed_audits:
+                            with st.container():
+                                st.markdown("---")
+                                st.warning(f"**{audit.get('title')}** (ID: `{audit.get('id')}`)")
+                                st.markdown(f"> {audit.get('description')}")
+                                if audit.get('details_snippet') and audit.get('details_snippet') != " (No specific item snippet)":
+                                    st.code(f"Example Snippet:\n{audit.get('details_snippet')}", language='html')
                 
-                # 2. Manual Verification Section
+                # Gemini AI Analysis Section
+                if failed_audits:
+                    with st.expander("🤖 AI Analysis with Gemini", expanded=True):
+                        analysis_key = f"{current_url}_{device_type.lower()}"
+                        
+                        if analysis_key in st.session_state.gemini_analyses:
+                            st.markdown("### Gemini's Recommendations")
+                            st.markdown(st.session_state.gemini_analyses[analysis_key])
+                        else:
+                            if st.button(f"Analyze {device_type} Issues with Gemini", key=f"gemini_{device_type.lower()}"):
+                                with st.spinner("Sending to Gemini for analysis..."):
+                                    analysis = get_gemini_analysis(failed_audits, f"{current_url} ({device_type})")
+                                    
+                                    # Store the analysis in session state
+                                    st.session_state.gemini_analyses[analysis_key] = analysis
+                                    
+                                    # Update the results DataFrame to include the analysis
+                                    column_name = f'Gemini Analysis ({device_type})'
+                                    if column_name not in st.session_state.results_df.columns:
+                                        st.session_state.results_df[column_name] = ""
+                                    
+                                    st.session_state.results_df.loc[selected_index, column_name] = analysis
+                                    
+                                    # Display the analysis
+                                    st.markdown("### Gemini's Recommendations")
+                                    st.markdown(analysis)
+                                    
+                                    # Rerun to update the UI
+                                    st.rerun()
+                
+                # Manual Verification Section
                 if manual_audits:
-                    st.subheader("⚠️ Requires Manual Verification")
-                    st.markdown("These audits cannot be automatically verified and require human testing:")
-                    for audit in manual_audits:
-                        with st.container():
-                            st.markdown("---")
-                            st.info(f"**{audit.get('title')}** (ID: `{audit.get('id')}`) - {audit.get('displayMode')}")
-                            st.markdown(f"> {audit.get('description')}")
-                            
-                            # Add testing guidance if available
-                            if audit.get('id') in manual_testing_tips:
-                                st.markdown(f"**How to test:** {manual_testing_tips[audit.get('id')]}")
+                    with st.expander("⚠️ Requires Manual Verification", expanded=False):
+                        st.markdown("These audits cannot be automatically verified and require human testing:")
+                        for audit in manual_audits:
+                            with st.container():
+                                st.markdown("---")
+                                st.info(f"**{audit.get('title')}** (ID: `{audit.get('id')}`) - {audit.get('displayMode')}")
+                                st.markdown(f"> {audit.get('description')}")
                                 
-                            if audit.get('details_snippet') and audit.get('details_snippet') != " (No specific item snippet)":
-                                st.code(f"Example Snippet:\n{audit.get('details_snippet')}", language='html')
+                                # Add testing guidance if available
+                                if audit.get('id') in manual_testing_tips:
+                                    st.markdown(f"**How to test:** {manual_testing_tips[audit.get('id')]}")
+                                    
+                                if audit.get('details_snippet') and audit.get('details_snippet') != " (No specific item snippet)":
+                                    st.code(f"Example Snippet:\n{audit.get('details_snippet')}", language='html')
                 
-                # 3. Passed Audits Section (in expander)
+                # Passed Audits Section
                 if passed_audits:
-                    with st.expander("✅ Passed Audits"):
+                    with st.expander("✅ Passed Audits", expanded=False):
                         st.markdown("These accessibility requirements have been successfully met according to automated testing:")
                         for audit in passed_audits:
                             st.markdown(f"- **{audit.get('title')}** (ID: `{audit.get('id')}`)")
                 
-                # 4. Not Applicable Section (in expander)
+                # Not Applicable Section
                 if na_audits:
-                    with st.expander("⏩ Not Applicable Audits"):
+                    with st.expander("⏩ Not Applicable Audits", expanded=False):
                         st.markdown("These audits don't apply to the current page, often because the page doesn't contain the relevant elements:")
                         for audit in na_audits:
                             st.markdown(f"- **{audit.get('title')}** (ID: `{audit.get('id')}`)")
+            
+            # Display desktop results
+            with desktop_tab:
+                desktop_audits = st.session_state.desktop_results.get(selected_index, [])
+                display_audit_results("Desktop", desktop_audits)
+            
+            # Display mobile results
+            with mobile_tab:
+                mobile_audits = st.session_state.mobile_results.get(selected_index, [])
+                display_audit_results("Mobile", mobile_audits)
 
     # --- Download Button (using session state df) ---
     @st.cache_data # Cache the conversion
     def convert_df_to_csv(df_to_convert):
-        # Ensure the Gemini Analysis column exists
-        if 'Gemini Analysis' not in df_to_convert.columns:
-            df_to_convert['Gemini Analysis'] = ""
+        # Ensure the Gemini Analysis columns exist
+        if 'Gemini Analysis (Desktop)' not in df_to_convert.columns:
+            df_to_convert['Gemini Analysis (Desktop)'] = ""
+        if 'Gemini Analysis (Mobile)' not in df_to_convert.columns:
+            df_to_convert['Gemini Analysis (Mobile)'] = ""
         
         return df_to_convert.to_csv(index=False).encode('utf-8')
 
     csv_output = convert_df_to_csv(st.session_state.results_df)
-    result_column_name = st.session_state.results_df.columns[-1] # Get the score column name dynamically
 
     st.download_button(
-        label=f"💾 Download Summary ({strategy_choice.capitalize()}) as CSV",
+        label="💾 Download Complete Analysis as CSV",
         data=csv_output,
-        file_name=f'pagespeed_accessibility_summary_{strategy_choice}.csv',
+        file_name='pagespeed_accessibility_summary_complete.csv',
         mime='text/csv',
     )
 
