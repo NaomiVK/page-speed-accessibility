@@ -2,7 +2,6 @@
 
 A powerful Streamlit application that analyzes web pages for accessibility issues using Google's PageSpeed Insights API. This tool helps identify WCAG 2.0 AA compliance issues and provides detailed reports to improve web accessibility.
 
-![Accessibility Checker](https://via.placeholder.com/800x400?text=PSI+Accessibility+Checker)
 
 ## 🌟 Features
 
@@ -90,7 +89,5 @@ The app categorizes accessibility audits into four groups:
 Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/yourusername/pagespeed-accessibility-checker/issues).
 
 ## 📧 Contact
-
-Your Name - your.email@example.com
 
 Project Link: [https://github.com/yourusername/pagespeed-accessibility-checker](https://github.com/yourusername/pagespeed-accessibility-checker)
