@@ -410,8 +410,8 @@ if process_file:
 
 # --- Display Results ---
 if st.session_state.results_df is not None:
-    st.subheader("📊 Summary Results")
-    st.dataframe(st.session_state.results_df, use_container_width=True)
+    # st.subheader("📊 Summary Results")
+    # st.dataframe(st.session_state.results_df, use_container_width=True)
 
     # --- Detailed View Section ---
     st.subheader("🔍 Detailed Audit Report")
