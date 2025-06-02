@@ -165,13 +165,25 @@ def get_gemini_analysis(failed_audits, url):
         return "Error: OPENROUTER_API_KEY environment variable not found."
     
     # Format the prompt with all audit information
-    prompt = f"""Analyze these accessibility failures for {url} and provide a concise summary.
+    prompt = f"""Analyze these accessibility failures for {url} and provide a concise summary with grading.
 
 Your response should:
-1. Explain each issue in plain, non-technical language
-2. Provide brief, specific recommendations on how to fix each issue
-3. Be concise and to the point - avoid unnecessary explanations
-4. Prioritize the most critical accessibility issues first
+1. Grade each failure using this system:
+   - **F!** (Critical): If the failure would prevent a person with disabilities from receiving information from the webpage - mark as crucial fix that needs immediate attention
+   - **F+** (Standard): If the failure doesn't prevent information access but is still a failure that should be fixed
+
+2. For each issue, provide:
+   - The assigned grade (F! or F+) with clear reasoning
+   - Explanation in plain, non-technical language
+   - Brief, specific recommendations on how to fix the issue
+
+3. Structure your response with:
+   - Critical issues (F!) listed first
+   - Standard issues (F+) listed after
+   - Clear grade indicators for each issue
+   - Concise explanations without unnecessary technical jargon
+
+4. At the end, provide a brief summary of the total count of F! vs F+ issues
 
 Here are the accessibility failures to analyze:
 
@@ -235,8 +247,10 @@ Here are the accessibility failures to analyze:
 st.set_page_config(page_title="Detailed PSI Accessibility Checker", layout="wide")
 st.title("📊 Detailed PageSpeed Insights Accessibility Checker")
 st.markdown("""
-Upload a CSV file with a column named **'urls'**. The app fetches the overall **WCAG 2.0 AA Accessibility Score**
+Paste your URLs in the text box below (one URL per line, maximum 1000 URLs). The app fetches the overall **WCAG 2.0 AA Accessibility Score**
 and provides details on specific audits that require attention for each URL using the Google PageSpeed Insights API.
+
+**Important:** URLs should include the full protocol (e.g., https://www.example.com)
 """)
 
 # --- Important Considerations Expander ---
@@ -281,44 +295,94 @@ if 'detailed_results' not in st.session_state:
     st.session_state.detailed_results = {} # Store detailed audits keyed by original index
 if 'gemini_analyses' not in st.session_state:
     st.session_state.gemini_analyses = {} # Store Gemini analyses keyed by URL
-if 'last_uploaded_filename' not in st.session_state:
-    st.session_state.last_uploaded_filename = None
+if 'desktop_results' not in st.session_state:
+    st.session_state.desktop_results = {}
+if 'mobile_results' not in st.session_state:
+    st.session_state.mobile_results = {}
 
 
-# 3. File Uploader & Processing Logic
-uploaded_file = st.file_uploader("📂 Choose your CSV file (must contain 'urls' column)", type="csv")
+# 3. URL Input & Processing Logic
+st.subheader("📝 Enter URLs to Analyze")
+st.markdown("**Instructions:** Paste your URLs below, one per line. URLs should include https://www. for best results.")
 
-# Check if a new file has been uploaded or if it's the same file
+url_input = st.text_area(
+    "URLs (one per line, maximum 1000):",
+    height=200,
+    placeholder="https://www.example.com\nhttps://www.google.com\nhttps://www.github.com",
+    help="Enter up to 1000 URLs, one per line. URLs should include the full protocol (https://)"
+)
+
+# Add a button to process URLs
+process_urls = st.button("🚀 Analyze URLs", type="primary")
+
+# Check if URLs should be processed
 process_file = False
-if uploaded_file is not None:
-    if uploaded_file.name != st.session_state.get('last_uploaded_filename'):
-        process_file = True
-        # Clear previous results when a new file is uploaded
-        st.session_state.results_df = None
-        st.session_state.detailed_results = {}
-        st.session_state.gemini_analyses = {}
-        st.session_state.last_uploaded_filename = uploaded_file.name
-    elif st.session_state.results_df is None:
-        # If the same file is uploaded again, but results were cleared, process again
-        process_file = True
+if process_urls and url_input.strip():
+    # Parse and validate URLs
+    raw_urls = [line.strip() for line in url_input.strip().split('\n') if line.strip()]
+    
+    # Validate URL count
+    if len(raw_urls) > 1000:
+        st.error(f"❌ **Error:** Too many URLs provided ({len(raw_urls)}). Maximum allowed is 1000.")
+        st.stop()
+    
+    if len(raw_urls) == 0:
+        st.warning("⚠️ No URLs found in the input. Please enter at least one URL.")
+        st.stop()
+    
+    # Clean and validate URLs
+    cleaned_urls = []
+    invalid_urls = []
+    
+    for i, url in enumerate(raw_urls):
+        # Basic URL validation and cleanup
+        if not url or not isinstance(url, str):
+            invalid_urls.append(f"Line {i+1}: Empty or invalid URL")
+            continue
+            
+        url = url.strip()
+        if not url:
+            continue
+            
+        # Add protocol if missing
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+            
+        # Basic URL format validation
+        if not ('.' in url and len(url) > 10):
+            invalid_urls.append(f"Line {i+1}: '{url}' - Invalid URL format")
+            continue
+            
+        cleaned_urls.append(url)
+    
+    if invalid_urls:
+        with st.expander("⚠️ Invalid URLs Found", expanded=False):
+            for invalid in invalid_urls:
+                st.warning(invalid)
+    
+    if not cleaned_urls:
+        st.error("❌ **Error:** No valid URLs found after validation.")
+        st.stop()
+    
+    # Create DataFrame from cleaned URLs
+    df = pd.DataFrame({'urls': cleaned_urls})
+    df.reset_index(drop=True, inplace=True)
+    
+    # Clear previous results when new URLs are processed
+    st.session_state.results_df = None
+    st.session_state.detailed_results = {}
+    st.session_state.gemini_analyses = {}
+    st.session_state.desktop_results = {}
+    st.session_state.mobile_results = {}
+    
+    process_file = True
+    st.success(f"✅ Ready to process {len(df)} URLs using both desktop and mobile strategies...")
 
+elif process_urls and not url_input.strip():
+    st.warning("⚠️ Please enter some URLs in the text area above.")
 
 if process_file:
     try:
-        df = pd.read_csv(uploaded_file)
-        if 'urls' not in df.columns:
-            st.error("❌ **Error:** The CSV file must contain a column named exactly 'urls'.")
-            st.stop()
-
-        df = df[['urls']].copy().dropna(subset=['urls'])
-        df = df[df['urls'].astype(str).str.strip() != '']
-        df.reset_index(drop=True, inplace=True) # Ensure index is sequential 0, 1, 2...
-
-        if df.empty:
-            st.warning("⚠️ No valid URLs found in the uploaded file after cleaning.")
-            st.stop()
-
-        st.write(f"Found {len(df)} URLs to process using both desktop and mobile strategies...")
 
         desktop_scores = []
         mobile_scores = []
@@ -607,5 +671,5 @@ if st.session_state.results_df is not None:
         mime='text/csv',
     )
 
-elif not uploaded_file:
-    st.info("Awaiting CSV file upload to begin analysis.")
+else:
+    st.info("Enter URLs in the text area above and click 'Analyze URLs' to begin analysis.")
