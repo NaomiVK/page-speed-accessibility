@@ -257,13 +257,13 @@ and provides details on specific audits that require attention for each URL usin
 with st.expander("⚠️ Important Considerations & How to Interpret Results"):
     st.markdown(f"""
     *   **API Limits:** Google enforces [rate limits](https://developers.google.com/speed/docs/insights/v5/reference/limits). Large lists might hit these. The app uses a `{API_CALL_DELAY}s` delay.
-    *   **Automated != Fully Compliant:** This tool uses Lighthouse for *automated* checks based on WCAG principles. It's a great starting point but **cannot guarantee full WCAG 2.0 AA compliance**. Manual testing (especially with screen readers and diverse users) is essential.
+    *   **Automated Testing Limitations:** This tool uses Lighthouse for *automated* checks based on WCAG principles. **Automated testing can only detect about 30% of accessibility issues**. Manual testing with screen readers and real users with disabilities is essential for full compliance.
     *   **Understanding Audit Categories:**
-        * **Failed Audits ❌** - These are accessibility issues automatically detected that must be fixed to improve accessibility. They violate WCAG guidelines and affect users with disabilities.
-        * **Requires Manual Verification ⚠️** - Automated tools cannot fully verify these aspects. They require human judgment and testing with assistive technologies like screen readers.
-        * **Passed Audits ✅** - These accessibility requirements have been successfully met according to automated testing. While this is positive, remember that automated testing only covers about 30% of potential accessibility issues.
-        * **Not Applicable ⏩** - These audits don't apply to the current page, often because the page doesn't contain the relevant elements (e.g., video audits when no videos are present).
-    *   **WCAG Basis:** Lighthouse audits are designed to test for failures of WCAG success criteria. While the report shows specific technical checks (e.g., 'image-alt', 'link-name'), these directly relate to WCAG principles like Perceivable, Operable, Understandable, Robust. The audit descriptions often provide context.
+        * **Failed Audits ❌** - Accessibility issues automatically detected that must be fixed. These violate WCAG guidelines and affect users with disabilities.
+        * **Requires Manual Verification ⚠️** - **Cannot be tested by machines**. These require human judgment and testing with assistive technologies. Even with 0 failed audits, your site may still have accessibility issues in these areas.
+        * **Passed Audits ✅** - Automatically verifiable requirements that have been successfully met. This only confirms what machines can test.
+        * **Not Applicable ⏩** - Audits that don't apply to your page (e.g., video audits when no videos are present).
+    *   **WCAG Basis:** Lighthouse audits test for failures of WCAG success criteria. Audit IDs like 'image-alt' and 'link-name' directly relate to WCAG principles (Perceivable, Operable, Understandable, Robust).
     *   **Other Factors:** Remember URL accessibility (no logins), dynamic content behaviour, and potential timeouts ({REQUEST_TIMEOUT}s).
     """)
 
@@ -515,63 +515,95 @@ if st.session_state.results_df is not None:
                 passed_audits = [a for a in audits_to_display if a.get('category') == 'passed']
                 na_audits = [a for a in audits_to_display if a.get('category') == 'not_applicable']
                 
+                # Calculate automated testing metrics
+                automated_testable = len(failed_audits) + len(passed_audits)
+                automated_pass_rate = 0
+                if automated_testable > 0:
+                    automated_pass_rate = int((len(passed_audits) / automated_testable) * 100)
+                
                 # Create summary data for visualization
                 categories = ["Failed", "Manual Check", "Passed", "Not Applicable"]
                 counts = [len(failed_audits), len(manual_audits), len(passed_audits), len(na_audits)]
                 
-                # Display summary statistics
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.subheader(f"{device_type} Audit Summary")
-                    summary_df = pd.DataFrame({
-                        "Category": categories,
-                        "Count": counts
-                    })
-                    
-                    # Create a horizontal bar chart
-                    chart = st_alt.Chart(summary_df).mark_bar().encode(
-                        x='Count:Q',
-                        y=st_alt.Y('Category:N', sort=None),
-                        color=st_alt.Color('Category:N', scale=st_alt.Scale(
+                # Display the audit summary chart
+                st.subheader(f"📊 {device_type} Accessibility Audit Overview")
+                summary_df = pd.DataFrame({
+                    "Category": categories,
+                    "Count": counts
+                })
+                
+                # Create a horizontal bar chart with better styling
+                chart = st_alt.Chart(summary_df).mark_bar(size=30).encode(
+                    x=st_alt.X('Count:Q', title='Number of Audits'),
+                    y=st_alt.Y('Category:N', sort=None, title=None),
+                    color=st_alt.Color('Category:N',
+                        scale=st_alt.Scale(
                             domain=categories,
                             range=['#ff4b4b', '#ffa500', '#00cc44', '#aaaaaa']
-                        ))
-                    ).properties(
-                        title=f'{device_type} Accessibility Audit Distribution'
-                    )
-                    st.altair_chart(chart, use_container_width=True)
+                        ),
+                        legend=None
+                    ),
+                    tooltip=['Category:N', 'Count:Q']
+                ).properties(
+                    height=200
+                ).configure_axis(
+                    labelFontSize=12,
+                    titleFontSize=14
+                )
+                st.altair_chart(chart, use_container_width=True)
                 
-                with col2:
-                    st.subheader("Statistics")
-                    total_audits = sum(counts)
-                    if total_audits > 0:
-                        st.metric("Total Audits", total_audits)
-                        st.metric("Automated Pass Rate", f"{int((len(passed_audits) / total_audits) * 100)}%")
-                        st.metric("Issues to Fix", len(failed_audits))
-                        st.metric("Manual Checks Needed", len(manual_audits))
+                # Automated Testing Metrics Section
+                st.subheader("🤖 Automated Testing Results")
+                st.info("**Important:** Automated testing can only detect ~30% of accessibility issues. Manual testing with assistive technologies is essential.")
                 
-                # Display manual testing guidance
-                manual_testing_tips = {
-                    'keyboard-navigation': "Test by navigating the entire page using only Tab, Shift+Tab, Enter, and arrow keys.",
-                    'logical-tab-order': "Verify that tabbing through the page follows a logical sequence matching visual layout.",
-                    'focus-traps': "Check that keyboard focus isn't trapped in any component without a way to exit.",
-                    'color-contrast': "Verify text is readable against its background for users with low vision or color blindness.",
-                    'document-title': "Ensure the page title accurately describes the page content for screen reader users.",
-                    'aria-allowed-attr': "Test with screen readers to ensure ARIA attributes convey the correct information.",
-                    'aria-hidden-body': "Verify that screen readers can access the page content.",
-                    'aria-hidden-focus': "Check that no focusable elements are within aria-hidden elements.",
-                    'aria-input-field-name': "Test with screen readers to ensure input fields are properly labeled.",
-                    'aria-toggle-field-name': "Verify toggle controls have accessible names that describe their purpose.",
-                    'form-field-multiple-labels': "Check that form fields don't have conflicting labels that confuse screen readers.",
-                    'heading-order': "Verify headings follow a logical hierarchical structure (h1, then h2, etc.).",
-                    'duplicate-id-aria': "Check that ARIA references point to the correct unique elements.",
-                    'meta-viewport': "Test zooming and scaling on mobile devices to ensure content remains accessible."
-                }
+                # Create metrics in a clean grid layout
+                if automated_testable > 0:
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric(
+                            label="Total Automated Tests",
+                            value=automated_testable,
+                            help="Number of tests that can be verified by machines"
+                        )
+                    
+                    with col2:
+                        st.metric(
+                            label="Passed Tests",
+                            value=len(passed_audits),
+                            delta=f"{automated_pass_rate}% pass rate",
+                            delta_color="normal",
+                            help="Tests that passed automated verification"
+                        )
+                    
+                    with col3:
+                        st.metric(
+                            label="Failed Tests",
+                            value=len(failed_audits),
+                            delta=None if len(failed_audits) == 0 else f"-{len(failed_audits)} issues",
+                            delta_color="inverse",
+                            help="Accessibility issues detected by automated testing"
+                        )
+                    
+                    with col4:
+                        st.metric(
+                            label="Manual Checks Required",
+                            value=len(manual_audits),
+                            delta=None if len(manual_audits) == 0 else f"⚠️ {len(manual_audits)} checks",
+                            delta_color="off",
+                            help="Tests that MUST be verified by human testers"
+                        )
+                    
+                    # Additional context for manual testing
+                    if len(manual_audits) > 0:
+                        st.warning(f"⚠️ **Action Required:** {len(manual_audits)} accessibility aspects cannot be verified by automated tools and require manual testing with assistive technologies (screen readers, keyboard navigation, etc.)")
+                else:
+                    st.warning("No automated tests available for this page.")
                 
                 # Use expanders for better organization
                 if failed_audits:
-                    with st.expander("❌ Failed Audits", expanded=True):
-                        st.markdown("These are accessibility issues automatically detected that must be fixed:")
+                    with st.expander("❌ Failed Automated Tests", expanded=True):
+                        st.markdown("These are accessibility issues that automated testing has detected and must be fixed:")
                         for audit in failed_audits:
                             with st.container():
                                 st.markdown("---")
@@ -612,25 +644,21 @@ if st.session_state.results_df is not None:
                 
                 # Manual Verification Section
                 if manual_audits:
-                    with st.expander("⚠️ Requires Manual Verification", expanded=False):
-                        st.markdown("These audits cannot be automatically verified and require human testing:")
+                    with st.expander("⚠️ Requires Manual Verification (Cannot Be Machine-Tested)", expanded=False):
+                        st.warning("⚠️ **Important:** These aspects CANNOT be verified by automated tools and require human testing with assistive technologies.")
                         for audit in manual_audits:
                             with st.container():
                                 st.markdown("---")
                                 st.info(f"**{audit.get('title')}** (ID: `{audit.get('id')}`) - {audit.get('displayMode')}")
                                 st.markdown(f"> {audit.get('description')}")
                                 
-                                # Add testing guidance if available
-                                if audit.get('id') in manual_testing_tips:
-                                    st.markdown(f"**How to test:** {manual_testing_tips[audit.get('id')]}")
-                                    
                                 if audit.get('details_snippet') and audit.get('details_snippet') != " (No specific item snippet)":
                                     st.code(f"Example Snippet:\n{audit.get('details_snippet')}", language='html')
                 
                 # Passed Audits Section
                 if passed_audits:
-                    with st.expander("✅ Passed Audits", expanded=False):
-                        st.markdown("These accessibility requirements have been successfully met according to automated testing:")
+                    with st.expander("✅ Passed Automated Tests", expanded=False):
+                        st.success("These accessibility requirements have been successfully verified by automated testing (remember: this is only ~30% of accessibility requirements):")
                         for audit in passed_audits:
                             st.markdown(f"- **{audit.get('title')}** (ID: `{audit.get('id')}`)")
                 
