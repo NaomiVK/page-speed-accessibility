@@ -272,16 +272,16 @@ api_key = os.getenv("PAGESPEED_API_KEY")
 if not api_key:
     st.error("🛑 **Error:** `PAGESPEED_API_KEY` environment variable not found.")
     st.stop()
-else:
-    masked_key = api_key[:4] + "****" + api_key[-4:]
-    st.success(f"✅ API Key found (ends in ...{masked_key[-8:]}).")
+# else:
+#     masked_key = api_key[:4] + "****" + api_key[-4:]
+#     st.success(f"✅ API Key found (ends in ...{masked_key[-8:]}).")
 # Check for OpenRouter API Key
 openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
 if not openrouter_api_key:
     st.warning("⚠️ **Warning:** `OPENROUTER_API_KEY` environment variable not found. Gemini AI analysis will not be available.")
-else:
-    masked_openrouter_key = openrouter_api_key[:4] + "****" + openrouter_api_key[-4:]
-    st.success(f"✅ OpenRouter API Key found (ends in ...{masked_openrouter_key[-8:]}).")
+# else:
+#     masked_openrouter_key = openrouter_api_key[:4] + "****" + openrouter_api_key[-4:]
+#     st.success(f"✅ OpenRouter API Key found (ends in ...{masked_openrouter_key[-8:]}).")
 
 
 # 2. Analysis Strategy Information
