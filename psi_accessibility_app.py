@@ -36,6 +36,134 @@ def get_audit_category(score, display_mode):
     else:
         return "other"
 
+# --- Helper Function to Get Core Web Vitals ---
+def get_core_web_vitals(url_to_check, api_key, strategy):
+    """
+    Fetches Core Web Vitals metrics from PageSpeed Insights API.
+    
+    Args:
+        url_to_check (str): The URL to analyze.
+        api_key (str): Your Google PageSpeed Insights API key.
+        strategy (str): 'mobile' or 'desktop'.
+    
+    Returns:
+        dict: Core Web Vitals metrics or error structure {'error': str}.
+    """
+    # Basic URL validation and cleanup
+    if not url_to_check or not isinstance(url_to_check, str) or not url_to_check.strip():
+        return {"error": "Invalid URL provided"}
+    url_to_check = url_to_check.strip()
+    if not url_to_check.startswith(('http://', 'https://')):
+        url_to_check = 'https://' + url_to_check
+
+    params = {
+        'url': url_to_check,
+        'key': api_key,
+        'category': 'PERFORMANCE',  # Core Web Vitals are part of performance
+        'strategy': strategy
+    }
+
+    try:
+        response = requests.get(API_ENDPOINT, params=params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        result = response.json()
+
+        lighthouse_result = result.get('lighthouseResult')
+        if not lighthouse_result:
+            error_message = result.get('error', {}).get('message', 'No lighthouseResult in API response.')
+            return {"error": f"API Error: {error_message}"}
+
+        # Extract Core Web Vitals metrics
+        audits = lighthouse_result.get('audits', {})
+        
+        # Core Web Vitals metrics
+        vitals = {
+            'lcp': {
+                'name': 'Largest Contentful Paint (LCP)',
+                'value': audits.get('largest-contentful-paint', {}).get('displayValue', 'N/A'),
+                'score': audits.get('largest-contentful-paint', {}).get('score', 0),
+                'numericValue': audits.get('largest-contentful-paint', {}).get('numericValue', 0),
+                'description': 'Measures loading performance. To provide a good user experience, LCP should occur within 2.5 seconds.'
+            },
+            'fid': {
+                'name': 'First Input Delay (FID)',
+                'value': audits.get('max-potential-fid', {}).get('displayValue', 'N/A'),
+                'score': audits.get('max-potential-fid', {}).get('score', 0),
+                'numericValue': audits.get('max-potential-fid', {}).get('numericValue', 0),
+                'description': 'Measures interactivity. To provide a good user experience, pages should have a FID of 100 milliseconds or less.'
+            },
+            'cls': {
+                'name': 'Cumulative Layout Shift (CLS)',
+                'value': audits.get('cumulative-layout-shift', {}).get('displayValue', 'N/A'),
+                'score': audits.get('cumulative-layout-shift', {}).get('score', 0),
+                'numericValue': audits.get('cumulative-layout-shift', {}).get('numericValue', 0),
+                'description': 'Measures visual stability. To provide a good user experience, pages should maintain a CLS of 0.1 or less.'
+            },
+            'inp': {
+                'name': 'Interaction to Next Paint (INP)',
+                'value': audits.get('interaction-to-next-paint', {}).get('displayValue', 'N/A'),
+                'score': audits.get('interaction-to-next-paint', {}).get('score', 0),
+                'numericValue': audits.get('interaction-to-next-paint', {}).get('numericValue', 0),
+                'description': 'Measures responsiveness. A good INP score is 200 milliseconds or less.'
+            }
+        }
+        
+        # Additional performance metrics
+        additional_metrics = {
+            'fcp': {
+                'name': 'First Contentful Paint (FCP)',
+                'value': audits.get('first-contentful-paint', {}).get('displayValue', 'N/A'),
+                'score': audits.get('first-contentful-paint', {}).get('score', 0),
+                'numericValue': audits.get('first-contentful-paint', {}).get('numericValue', 0)
+            },
+            'si': {
+                'name': 'Speed Index',
+                'value': audits.get('speed-index', {}).get('displayValue', 'N/A'),
+                'score': audits.get('speed-index', {}).get('score', 0),
+                'numericValue': audits.get('speed-index', {}).get('numericValue', 0)
+            },
+            'tti': {
+                'name': 'Time to Interactive (TTI)',
+                'value': audits.get('interactive', {}).get('displayValue', 'N/A'),
+                'score': audits.get('interactive', {}).get('score', 0),
+                'numericValue': audits.get('interactive', {}).get('numericValue', 0)
+            },
+            'tbt': {
+                'name': 'Total Blocking Time (TBT)',
+                'value': audits.get('total-blocking-time', {}).get('displayValue', 'N/A'),
+                'score': audits.get('total-blocking-time', {}).get('score', 0),
+                'numericValue': audits.get('total-blocking-time', {}).get('numericValue', 0)
+            }
+        }
+        
+        # Get performance score
+        performance_score = lighthouse_result.get('categories', {}).get('performance', {}).get('score')
+        if performance_score is not None:
+            performance_score = int(performance_score * 100)
+        else:
+            performance_score = 'N/A'
+        
+        return {
+            'performance_score': performance_score,
+            'core_web_vitals': vitals,
+            'additional_metrics': additional_metrics
+        }
+
+    except requests.exceptions.Timeout:
+        return {"error": "Error: Timeout"}
+    except requests.exceptions.HTTPError as e:
+        error_detail = f"HTTP Error {e.response.status_code}"
+        try:
+            error_content = response.json().get('error', {})
+            error_detail = f"API Error {error_content.get('code', e.response.status_code)}: {error_content.get('message', 'No details provided')}"
+        except (json.JSONDecodeError, AttributeError):
+            error_detail = f"HTTP Error {e.response.status_code}: {response.text[:200]}"
+        return {"error": error_detail}
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Error: Network Issue ({e})"}
+    except Exception as e:
+        return {"error": f"Error: Unexpected ({e})"}
+
 # --- Helper Function to Call PageSpeed Insights API ---
 # UPDATED: Returns detailed audit results along with the score for all categories
 def get_psi_accessibility_details(url_to_check, api_key, strategy):
@@ -208,7 +336,7 @@ Here are the accessibility failures to analyze:
             {"role": "user", "content": prompt}
         ],
         "max_tokens": 4096,
-        "temperature": 0.3
+        "temperature": 0.2
     }
     
     try:
@@ -244,8 +372,8 @@ Here are the accessibility failures to analyze:
         return f"Error: Unexpected error occurred: {e}"
 
 # --- Streamlit App UI ---
-st.set_page_config(page_title="Detailed PSI Accessibility Checker", layout="wide")
-st.title("📊 Detailed PageSpeed Insights Accessibility Checker")
+st.set_page_config(page_title="Detailed PSI Accessibility Test", layout="wide")
+st.title("📊 Detailed PageSpeed Insights Accessibility Tests")
 st.markdown("""
 Paste your URLs in the text box below (one URL per line, maximum 1000 URLs). The app fetches the overall **WCAG 2.0 AA Accessibility Score**
 and provides details on specific audits that require attention for each URL using the Google PageSpeed Insights API.
@@ -264,7 +392,6 @@ with st.expander("⚠️ Important Considerations & How to Interpret Results"):
         * **Passed Audits ✅** - Automatically verifiable requirements that have been successfully met. This only confirms what machines can test.
         * **Not Applicable ⏩** - Audits that don't apply to your page (e.g., video audits when no videos are present).
     *   **WCAG Basis:** Lighthouse audits test for failures of WCAG success criteria. Audit IDs like 'image-alt' and 'link-name' directly relate to WCAG principles (Perceivable, Operable, Understandable, Robust).
-    *   **Other Factors:** Remember URL accessibility (no logins), dynamic content behaviour, and potential timeouts ({REQUEST_TIMEOUT}s).
     """)
 
 # 1. Check for API Key (Same as before)
@@ -285,7 +412,7 @@ if not openrouter_api_key:
 
 
 # 2. Analysis Strategy Information
-st.info("The app will analyze URLs using both **desktop** and **mobile** strategies for comprehensive accessibility testing.")
+st.info("The will analyze URLs using both **desktop** and **mobile** strategies for comprehensive accessibility testing.")
 
 # --- Session State Initialization ---
 # Use session state to store results across reruns (e.g., when selecting a URL for details)
@@ -299,6 +426,10 @@ if 'desktop_results' not in st.session_state:
     st.session_state.desktop_results = {}
 if 'mobile_results' not in st.session_state:
     st.session_state.mobile_results = {}
+if 'desktop_vitals' not in st.session_state:
+    st.session_state.desktop_vitals = {}
+if 'mobile_vitals' not in st.session_state:
+    st.session_state.mobile_vitals = {}
 
 
 # 3. URL Input & Processing Logic
@@ -374,6 +505,8 @@ if process_urls and url_input.strip():
     st.session_state.gemini_analyses = {}
     st.session_state.desktop_results = {}
     st.session_state.mobile_results = {}
+    st.session_state.desktop_vitals = {}
+    st.session_state.mobile_vitals = {}
     
     process_file = True
     st.success(f"✅ Ready to process {len(df)} URLs using both desktop and mobile strategies...")
@@ -389,9 +522,11 @@ if process_file:
         st.session_state.detailed_results = {} # Reset details for new run
         st.session_state.desktop_results = {}
         st.session_state.mobile_results = {}
+        st.session_state.desktop_vitals = {}
+        st.session_state.mobile_vitals = {}
         progress_bar = st.progress(0)
         status_text = st.empty()
-        total_urls = len(df) * 2  # Each URL is processed twice (desktop and mobile)
+        total_urls = len(df) * 4  # Each URL is processed 4 times (desktop/mobile for both accessibility and vitals)
         start_time = time.time()
         
         # Process counter for progress calculation
@@ -449,10 +584,56 @@ if process_file:
 
             progress_bar.progress(current_progress)
             time.sleep(API_CALL_DELAY)
+            
+            # Process desktop Core Web Vitals
+            process_count += 1
+            current_progress = process_count / total_urls
+            elapsed_time = time.time() - start_time
+            avg_time_per_process = elapsed_time / process_count if process_count > 0 else elapsed_time
+            estimated_remaining = (total_urls - process_count) * avg_time_per_process if avg_time_per_process > 0 else 0
+
+            status_text.text(
+                f"⚙️ Processing URL {i+1}/{len(df)} (Desktop Vitals): {url}\n"
+                f"⏳ Estimated time remaining: {time.strftime('%M:%S', time.gmtime(estimated_remaining))}"
+            )
+
+            # Call the API function for desktop vitals
+            desktop_vitals_result = get_core_web_vitals(url, api_key, 'desktop')
+
+            if "error" in desktop_vitals_result:
+                st.session_state.desktop_vitals[i] = {"error": desktop_vitals_result["error"]}
+            else:
+                st.session_state.desktop_vitals[i] = desktop_vitals_result
+
+            progress_bar.progress(current_progress)
+            time.sleep(API_CALL_DELAY)
+            
+            # Process mobile Core Web Vitals
+            process_count += 1
+            current_progress = process_count / total_urls
+            elapsed_time = time.time() - start_time
+            avg_time_per_process = elapsed_time / process_count if process_count > 0 else elapsed_time
+            estimated_remaining = (total_urls - process_count) * avg_time_per_process if avg_time_per_process > 0 else 0
+
+            status_text.text(
+                f"⚙️ Processing URL {i+1}/{len(df)} (Mobile Vitals): {url}\n"
+                f"⏳ Estimated time remaining: {time.strftime('%M:%S', time.gmtime(estimated_remaining))}"
+            )
+
+            # Call the API function for mobile vitals
+            mobile_vitals_result = get_core_web_vitals(url, api_key, 'mobile')
+
+            if "error" in mobile_vitals_result:
+                st.session_state.mobile_vitals[i] = {"error": mobile_vitals_result["error"]}
+            else:
+                st.session_state.mobile_vitals[i] = mobile_vitals_result
+
+            progress_bar.progress(current_progress)
+            time.sleep(API_CALL_DELAY)
 
         end_time = time.time()
         total_time = end_time - start_time
-        status_text.success(f"✅ Processing complete for {len(df)} URLs (desktop and mobile) in {time.strftime('%M minutes %S seconds', time.gmtime(total_time))}!")
+        status_text.success(f"✅ Processing complete for {len(df)} URLs (desktop and mobile accessibility + Core Web Vitals) in {time.strftime('%M minutes %S seconds', time.gmtime(total_time))}!")
 
         # Store results in session state DataFrame
         df['Desktop Score'] = desktop_scores
@@ -465,12 +646,16 @@ if process_file:
         st.session_state.results_df = None # Clear results on error
         st.session_state.detailed_results = {}
         st.session_state.gemini_analyses = {}
+        st.session_state.desktop_vitals = {}
+        st.session_state.mobile_vitals = {}
     except Exception as e:
         st.error(f"An unexpected error occurred while processing the file: {e}")
         st.exception(e)
         st.session_state.results_df = None # Clear results on error
         st.session_state.detailed_results = {}
         st.session_state.gemini_analyses = {}
+        st.session_state.desktop_vitals = {}
+        st.session_state.mobile_vitals = {}
 
 # --- Display Results ---
 if st.session_state.results_df is not None:
@@ -496,8 +681,8 @@ if st.session_state.results_df is not None:
             
             st.markdown(f"**Details for:** `{current_url}`")
             
-            # Create tabs for desktop and mobile results
-            desktop_tab, mobile_tab = st.tabs(["💻 Desktop Results", "📱 Mobile Results"])
+            # Create tabs for desktop, mobile, and core web vitals results
+            desktop_tab, mobile_tab, vitals_tab = st.tabs(["💻 Desktop Results", "📱 Mobile Results", "🚀 Core Web Vitals"])
             
             # Function to display audit results for a specific device type
             def display_audit_results(device_type, audits_to_display):
@@ -525,80 +710,99 @@ if st.session_state.results_df is not None:
                 categories = ["Failed", "Manual Check", "Passed", "Not Applicable"]
                 counts = [len(failed_audits), len(manual_audits), len(passed_audits), len(na_audits)]
                 
-                # Display the audit summary chart
-                st.subheader(f"📊 {device_type} Accessibility Audit Overview")
-                summary_df = pd.DataFrame({
-                    "Category": categories,
-                    "Count": counts
-                })
+                # Create responsive columns - on mobile they'll stack vertically
+                chart_col, metrics_col = st.columns([1, 1.5], gap="large")
                 
-                # Create a horizontal bar chart with better styling
-                chart = st_alt.Chart(summary_df).mark_bar(size=30).encode(
-                    x=st_alt.X('Count:Q', title='Number of Audits'),
-                    y=st_alt.Y('Category:N', sort=None, title=None),
-                    color=st_alt.Color('Category:N',
-                        scale=st_alt.Scale(
-                            domain=categories,
-                            range=['#ff4b4b', '#ffa500', '#00cc44', '#aaaaaa']
+                # Left column - Accessibility Audit Overview
+                with chart_col:
+                    st.subheader(f"{device_type} Accessibility Audit Overview")
+                    
+                    # Create the pie chart data
+                    summary_df = pd.DataFrame({
+                        "Category": categories,
+                        "Count": counts
+                    })
+                    
+                    # Create a pie chart
+                    chart = st_alt.Chart(summary_df).mark_arc(innerRadius=50).encode(
+                        theta=st_alt.Theta('Count:Q', stack=True),
+                        color=st_alt.Color('Category:N',
+                            scale=st_alt.Scale(
+                                domain=categories,
+                                range=['#ff4b4b', '#ffa500', '#00cc44', '#aaaaaa']
+                            ),
+                            legend=st_alt.Legend(
+                                title="Category",
+                                orient="bottom",
+                                labelFontSize=11,
+                                titleFontSize=12,
+                                columns=2
+                            )
                         ),
-                        legend=None
-                    ),
-                    tooltip=['Category:N', 'Count:Q']
-                ).properties(
-                    height=200
-                ).configure_axis(
-                    labelFontSize=12,
-                    titleFontSize=14
-                )
-                st.altair_chart(chart, use_container_width=True)
+                        tooltip=[
+                            st_alt.Tooltip('Category:N', title='Category'),
+                            st_alt.Tooltip('Count:Q', title='Count'),
+                            st_alt.Tooltip('Count:Q', title='Percentage', format='.1%', aggregate='mean')
+                        ]
+                    ).properties(
+                        width=250,
+                        height=250,
+                        title={
+                            "text": f"Audit Results Distribution",
+                            "fontSize": 14,
+                            "anchor": "start"
+                        }
+                    )
+                    st.altair_chart(chart, use_container_width=False)
                 
-                # Automated Testing Metrics Section
-                st.subheader("🤖 Automated Testing Results")
-                st.info("**Important:** Automated testing can only detect ~30% of accessibility issues. Manual testing with assistive technologies is essential.")
+                # Right column - Automated Testing Results
+                with metrics_col:
+                    st.subheader("Automated Testing Results")
+                    
+                    if automated_testable > 0:
+                        # Create a 2x2 grid for metrics
+                        metric_col1, metric_col2 = st.columns(2)
+                        
+                        with metric_col1:
+                            st.metric(
+                                label="Total Automated Tests",
+                                value=automated_testable,
+                                help="Number of tests that can be verified by machines"
+                            )
+                            
+                            st.metric(
+                                label="Failed Tests",
+                                value=len(failed_audits),
+                                delta=None if len(failed_audits) == 0 else f"-{len(failed_audits)} issues",
+                                delta_color="inverse",
+                                help="Accessibility issues detected by automated testing"
+                            )
+                        
+                        with metric_col2:
+                            st.metric(
+                                label="Passed Tests",
+                                value=len(passed_audits),
+                                delta=f"{automated_pass_rate}% pass rate",
+                                delta_color="normal",
+                                help="Tests that passed automated verification"
+                            )
+                            
+                            st.metric(
+                                label="Manual Checks",
+                                value=len(manual_audits),
+                                delta=None if len(manual_audits) == 0 else f"⚠️ {len(manual_audits)} checks",
+                                delta_color="off",
+                                help="Tests that MUST be verified by human testers"
+                            )
+                        
+                        # Important note about automated testing limitations
+                        st.info("**Note:** Automated testing can only detect ~30% of accessibility issues.")
+                    else:
+                        st.warning("No automated tests available for this page.")
                 
-                # Create metrics in a clean grid layout
-                if automated_testable > 0:
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric(
-                            label="Total Automated Tests",
-                            value=automated_testable,
-                            help="Number of tests that can be verified by machines"
-                        )
-                    
-                    with col2:
-                        st.metric(
-                            label="Passed Tests",
-                            value=len(passed_audits),
-                            delta=f"{automated_pass_rate}% pass rate",
-                            delta_color="normal",
-                            help="Tests that passed automated verification"
-                        )
-                    
-                    with col3:
-                        st.metric(
-                            label="Failed Tests",
-                            value=len(failed_audits),
-                            delta=None if len(failed_audits) == 0 else f"-{len(failed_audits)} issues",
-                            delta_color="inverse",
-                            help="Accessibility issues detected by automated testing"
-                        )
-                    
-                    with col4:
-                        st.metric(
-                            label="Manual Checks Required",
-                            value=len(manual_audits),
-                            delta=None if len(manual_audits) == 0 else f"⚠️ {len(manual_audits)} checks",
-                            delta_color="off",
-                            help="Tests that MUST be verified by human testers"
-                        )
-                    
-                    # Additional context for manual testing
-                    if len(manual_audits) > 0:
-                        st.warning(f"⚠️ **Action Required:** {len(manual_audits)} accessibility aspects cannot be verified by automated tools and require manual testing with assistive technologies (screen readers, keyboard navigation, etc.)")
-                else:
-                    st.warning("No automated tests available for this page.")
+                # Additional context for manual testing (full width below the columns)
+                if len(manual_audits) > 0:
+                    st.warning(f"⚠️ **Action Required:** {len(manual_audits)} accessibility aspects cannot be verified by automated tools and require manual testing with assistive technologies (screen readers, keyboard navigation, etc.)")
                 
                 # Use expanders for better organization
                 if failed_audits:
@@ -678,6 +882,113 @@ if st.session_state.results_df is not None:
             with mobile_tab:
                 mobile_audits = st.session_state.mobile_results.get(selected_index, [])
                 display_audit_results("Mobile", mobile_audits)
+            
+            # Display Core Web Vitals results
+            with vitals_tab:
+                st.subheader("🚀 Core Web Vitals Analysis")
+                
+                # Get vitals data for both desktop and mobile
+                desktop_vitals_data = st.session_state.desktop_vitals.get(selected_index, {})
+                mobile_vitals_data = st.session_state.mobile_vitals.get(selected_index, {})
+                
+                # Create two columns for desktop and mobile vitals
+                vitals_col1, vitals_col2 = st.columns(2)
+                
+                # Function to display vitals metrics
+                def display_vitals_metrics(col, device_type, vitals_data):
+                    with col:
+                        st.markdown(f"### {device_type}")
+                        
+                        if "error" in vitals_data:
+                            st.error(f"Could not retrieve Core Web Vitals: {vitals_data['error']}")
+                            return
+                        
+                        # Display performance score
+                        perf_score = vitals_data.get('performance_score', 'N/A')
+                        if perf_score != 'N/A':
+                            color = "🟢" if perf_score >= 90 else "🟡" if perf_score >= 50 else "🔴"
+                            st.metric("Performance Score", f"{color} {perf_score}%")
+                        else:
+                            st.metric("Performance Score", "N/A")
+                        
+                        st.markdown("#### Core Web Vitals")
+                        
+                        # Display Core Web Vitals
+                        core_vitals = vitals_data.get('core_web_vitals', {})
+                        
+                        for key, vital in core_vitals.items():
+                            score = vital.get('score', 0)
+                            value = vital.get('value', 'N/A')
+                            name = vital.get('name', key.upper())
+                            description = vital.get('description', '')
+                            
+                            # Determine status color based on score
+                            if score >= 0.9:
+                                status = "🟢 Good"
+                            elif score >= 0.5:
+                                status = "🟡 Needs Improvement"
+                            else:
+                                status = "🔴 Poor"
+                            
+                            with st.expander(f"{name}: {status} ({value})", expanded=True):
+                                st.markdown(description)
+                                
+                                # Show thresholds for each metric
+                                if key == 'lcp':
+                                    st.info("**Thresholds:** Good < 2.5s | Needs Improvement 2.5s-4s | Poor > 4s")
+                                elif key == 'fid':
+                                    st.info("**Thresholds:** Good < 100ms | Needs Improvement 100ms-300ms | Poor > 300ms")
+                                elif key == 'cls':
+                                    st.info("**Thresholds:** Good < 0.1 | Needs Improvement 0.1-0.25 | Poor > 0.25")
+                                elif key == 'inp':
+                                    st.info("**Thresholds:** Good < 200ms | Needs Improvement 200ms-500ms | Poor > 500ms")
+                        
+                        # Additional metrics in an expander
+                        additional = vitals_data.get('additional_metrics', {})
+                        if additional:
+                            with st.expander("📊 Additional Performance Metrics", expanded=False):
+                                for key, metric in additional.items():
+                                    score = metric.get('score', 0)
+                                    value = metric.get('value', 'N/A')
+                                    name = metric.get('name', key.upper())
+                                    
+                                    # Determine status based on score
+                                    if score >= 0.9:
+                                        status_icon = "🟢"
+                                    elif score >= 0.5:
+                                        status_icon = "🟡"
+                                    else:
+                                        status_icon = "🔴"
+                                    
+                                    st.markdown(f"**{name}:** {status_icon} {value}")
+                
+                # Display desktop vitals
+                display_vitals_metrics(vitals_col1, "💻 Desktop", desktop_vitals_data)
+                
+                # Display mobile vitals
+                display_vitals_metrics(vitals_col2, "📱 Mobile", mobile_vitals_data)
+                
+                # Add educational content about Core Web Vitals
+                with st.expander("📚 Understanding Core Web Vitals", expanded=False):
+                    st.markdown("""
+                    **Core Web Vitals** are a set of real-world, user-centered metrics that quantify key aspects of the user experience:
+                    
+                    1. **Largest Contentful Paint (LCP)**: Measures loading performance. LCP marks the point when the page's main content has likely loaded.
+                    
+                    2. **First Input Delay (FID)**: Measures interactivity. FID quantifies the experience users feel when trying to interact with unresponsive pages.
+                    
+                    3. **Cumulative Layout Shift (CLS)**: Measures visual stability. CLS helps quantify how often users experience unexpected layout shifts.
+                    
+                    4. **Interaction to Next Paint (INP)**: A newer metric that assesses overall responsiveness by measuring all interactions throughout the page lifecycle.
+                    
+                    **Why Core Web Vitals Matter:**
+                    - They directly impact user experience
+                    - Google uses them as ranking signals for search results
+                    - They help identify performance bottlenecks
+                    - They provide standardized metrics for measuring real-world performance
+                    
+                    **Note:** Lab data (like from PageSpeed Insights) provides estimates based on simulated conditions. Real user data may vary based on actual devices, networks, and user behavior.
+                    """)
 
     # --- Download Button (using session state df) ---
     @st.cache_data # Cache the conversion
