@@ -165,7 +165,7 @@ def get_core_web_vitals(url_to_check, api_key, strategy):
         return {"error": f"Error: Unexpected ({e})"}
 
 # --- Helper Function to Call PageSpeed Insights API ---
-# UPDATED: Returns detailed audit results along with the score for all categories
+# Returns detailed audit results along with the score for all categories
 def get_psi_accessibility_details(url_to_check, api_key, strategy):
     """
     Fetches the PageSpeed Insights accessibility score and detailed audit results
@@ -373,7 +373,7 @@ Here are the accessibility failures to analyze:
 
 # --- Streamlit App UI ---
 st.set_page_config(page_title="Detailed PSI Accessibility Test", layout="wide")
-st.title("📊 Detailed PageSpeed Insights Accessibility Tests")
+st.title("PageSpeed Insights Accessibility Tests")
 st.markdown("""
 Paste your URLs in the text box below (one URL per line, maximum 1000 URLs). The app fetches the overall **WCAG 2.0 AA Accessibility Score**
 and provides details on specific audits that require attention for each URL using the Google PageSpeed Insights API.
@@ -433,7 +433,7 @@ if 'mobile_vitals' not in st.session_state:
 
 
 # 3. URL Input & Processing Logic
-st.subheader("📝 Enter URLs to Analyze")
+st.subheader("Enter URLs to Analyze")
 st.markdown("**Instructions:** Paste your URLs below, one per line. URLs should include https://www. for best results.")
 
 url_input = st.text_area(
@@ -444,7 +444,7 @@ url_input = st.text_area(
 )
 
 # Add a button to process URLs
-process_urls = st.button("🚀 Analyze URLs", type="primary")
+process_urls = st.button("Analyze URLs", type="primary")
 
 # Check if URLs should be processed
 process_file = False
@@ -509,7 +509,7 @@ if process_urls and url_input.strip():
     st.session_state.mobile_vitals = {}
     
     process_file = True
-    st.success(f"✅ Ready to process {len(df)} URLs using both desktop and mobile strategies...")
+    st.success(f"Ready to process {len(df)} URLs using both desktop and mobile strategies...")
 
 elif process_urls and not url_input.strip():
     st.warning("⚠️ Please enter some URLs in the text area above.")
@@ -594,7 +594,7 @@ if process_file:
 
             status_text.text(
                 f"⚙️ Processing URL {i+1}/{len(df)} (Desktop Vitals): {url}\n"
-                f"⏳ Estimated time remaining: {time.strftime('%M:%S', time.gmtime(estimated_remaining))}"
+                f"⏳Estimated time remaining: {time.strftime('%M:%S', time.gmtime(estimated_remaining))}"
             )
 
             # Call the API function for desktop vitals
@@ -818,7 +818,7 @@ if st.session_state.results_df is not None:
                 
                 # Gemini AI Analysis Section
                 if failed_audits:
-                    with st.expander("🤖 AI Analysis with Gemini", expanded=True):
+                    with st.expander("AI Analysis with Gemini", expanded=True):
                         analysis_key = f"{current_url}_{device_type.lower()}"
                         
                         if analysis_key in st.session_state.gemini_analyses:
@@ -946,7 +946,7 @@ if st.session_state.results_df is not None:
                         # Additional metrics in an expander
                         additional = vitals_data.get('additional_metrics', {})
                         if additional:
-                            with st.expander("📊 Additional Performance Metrics", expanded=False):
+                            with st.expander("Additional Performance Metrics", expanded=False):
                                 for key, metric in additional.items():
                                     score = metric.get('score', 0)
                                     value = metric.get('value', 'N/A')
@@ -968,8 +968,7 @@ if st.session_state.results_df is not None:
                 # Display mobile vitals
                 display_vitals_metrics(vitals_col2, "Mobile", mobile_vitals_data)
                 
-                # Add educational content about Core Web Vitals
-                with st.expander("📚 Understanding Core Web Vitals", expanded=False):
+                with st.expander("Understanding Core Web Vitals", expanded=False):
                     st.markdown("""
                     **Core Web Vitals** are a set of real-world, user-centered metrics that quantify key aspects of the user experience:
                     
@@ -993,7 +992,7 @@ if st.session_state.results_df is not None:
     # --- Download Button (using session state df) ---
     @st.cache_data # Cache the conversion
     def convert_df_to_csv(df_to_convert):
-        # Ensure the Gemini Analysis columns exist
+        
         if 'Gemini Analysis (Desktop)' not in df_to_convert.columns:
             df_to_convert['Gemini Analysis (Desktop)'] = ""
         if 'Gemini Analysis (Mobile)' not in df_to_convert.columns:
@@ -1004,7 +1003,7 @@ if st.session_state.results_df is not None:
     csv_output = convert_df_to_csv(st.session_state.results_df)
 
     st.download_button(
-        label="💾 Download Complete Analysis as CSV",
+        label="Download Complete Analysis as CSV",
         data=csv_output,
         file_name='pagespeed_accessibility_summary_complete.csv',
         mime='text/csv',
