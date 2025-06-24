@@ -663,7 +663,7 @@ if st.session_state.results_df is not None:
     # st.dataframe(st.session_state.results_df, use_container_width=True)
 
     # --- Detailed View Section ---
-    st.subheader("🔍 Detailed Audit Report")
+    st.subheader("Detailed Audit Report")
     st.markdown("Select a URL from the list above to view its detailed accessibility audit results.")
 
     # Create options for the select box: "Index: URL"
@@ -682,7 +682,7 @@ if st.session_state.results_df is not None:
             st.markdown(f"**Details for:** `{current_url}`")
             
             # Create tabs for desktop, mobile, and core web vitals results
-            desktop_tab, mobile_tab, vitals_tab = st.tabs(["💻 Desktop Results", "📱 Mobile Results", "🚀 Core Web Vitals"])
+            desktop_tab, mobile_tab, vitals_tab = st.tabs(["Desktop Results", "Mobile Results", "Core Web Vitals"])
             
             # Function to display audit results for a specific device type
             def display_audit_results(device_type, audits_to_display):
