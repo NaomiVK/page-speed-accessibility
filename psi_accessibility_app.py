@@ -885,7 +885,7 @@ if st.session_state.results_df is not None:
             
             # Display Core Web Vitals results
             with vitals_tab:
-                st.subheader("🚀 Core Web Vitals Analysis")
+                st.subheader("Core Web Vitals Analysis")
                 
                 # Get vitals data for both desktop and mobile
                 desktop_vitals_data = st.session_state.desktop_vitals.get(selected_index, {})
@@ -963,10 +963,10 @@ if st.session_state.results_df is not None:
                                     st.markdown(f"**{name}:** {status_icon} {value}")
                 
                 # Display desktop vitals
-                display_vitals_metrics(vitals_col1, "💻 Desktop", desktop_vitals_data)
+                display_vitals_metrics(vitals_col1, "Desktop", desktop_vitals_data)
                 
                 # Display mobile vitals
-                display_vitals_metrics(vitals_col2, "📱 Mobile", mobile_vitals_data)
+                display_vitals_metrics(vitals_col2, "Mobile", mobile_vitals_data)
                 
                 # Add educational content about Core Web Vitals
                 with st.expander("📚 Understanding Core Web Vitals", expanded=False):
